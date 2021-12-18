@@ -3,7 +3,6 @@ from discord.ext import commands, tasks
 from discord.ext.commands import bot, cooldown, BucketType
 from discord.utils import get
 from itertools import cycle
-from threading import Thread
 import asyncio
 import json
 import pyrebase
@@ -13,6 +12,7 @@ with open('settings.json', 'r') as cf:
     config = json.loads(cf.read())
     token = config['token']
     prefix = config['prefix']
+    pyrecfg = config['pyrebase']
 intents = discord.Intents().all()
 client = commands.Bot(command_prefix = prefix, case_insensitive = True, help_command=None, intents=intents)
 
@@ -69,12 +69,43 @@ async def infos_error(ctx, error):
     if isinstance(error, commands.MissingRequiredArgument):
         await ctx.send(f'{ctx.author.mention} **ERRO!** É necessário mencionar ou inserir o ID do membro para pegar suas informações.', delete_after=8.0)
         await ctx.message.delete()
-    
+
+@client.command()
+@commands.guild_only()
+@commands.has_any_role(717807997467885598)
+async def criartime(ctx, membro1: discord.Member, membro2: discord.Member, membro3: discord.Member, membro4: discord.Member, membro5: discord.Member, *, nometime):
+    roletime = await ctx.guild.create_role(name=nometime, mentionable=True, reason=f"Cargo de time {nometime} criado.")
+    roleedicao = get(ctx.guild.roles, id=888554418142855178) # id do cargo de cada edição
+    await ctx.message.delete()
+    perms = {
+        ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        roletime: discord.PermissionOverwrite(read_messages=True, send_messages=True)}
+    for player in membro1, membro2, membro3, membro4, membro5:
+        await player.add_roles(roletime)
+        await player.add_roles(roleedicao)
+        try: # try para evitar dm bloqueada e parada no codigo
+            await player.send(f'**Você foi adicionado no time:** `{nometime}`!\n**Em breve será enviada as próximas instruções do campeonato.**\n**Caso você ache que isso seja um erro contate um staff.**')
+        except:
+            pass
+    canaltime = await ctx.guild.create_text_channel(nometime, overwrites=perms, category= client.get_channel(id=888602889994502155))
+    await canaltime.send(f'**Bem vindo a Dreamcup League!\n\nO time `{nometime}` foi registrado e já está participando do campeonato!\n\nCaso haja alguma dúvida, basta enviar neste canal que iremos te responder.**')
+    await ctx.send(f'<a:sucesso:883480591276851222> {ctx.author.mention} Time {roletime} criado com êxito e players registrados com sucesso!', delete_after=3.0)
+
+@criartime.error
+async def criartime_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f'{ctx.author.mention} **ERRO!** É necessário mencionar os 5 membros e inserir o nome do time. Uso correto: `!criartime <membro1> <membro2> <membro3> <membro4> <membro5> Nome do time`', delete_after=10.0)
+        await ctx.message.delete()      
+        
 @client.command()
 @commands.guild_only()
 @commands.cooldown(1,120, commands.BucketType.user)
 async def suporte(ctx):
     if ctx.channel.id == 883196216605823006:
+        perms = {
+            ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            ctx.author: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+        }
         canalsup = await ctx.guild.create_text_channel(f'sup-{ctx.author.discriminator}', category = client.get_channel(id=883201218808266772), overwrites=perms)
         await ctx.message.delete()
         await ctx.send(f'{ctx.author.mention} Ticket de suporte criado! {canalsup.mention}', delete_after=3.0)
@@ -84,10 +115,35 @@ async def suporte(ctx):
         embed.timestamp = datetime.utcnow()
         await canalsup.send(embed=embed)
     else:
-        await ctx.send(f'{ctx.author.mention} Você só pode executar este comando dentro do <#883196216605823006>.', delete_after=8.0)
+        await ctx.reply(f'Você só pode executar este comando dentro do <#883196216605823006>.', delete_after=8.0)
+        ctx.command.reset_cooldown(ctx)
+        await asyncio.sleep(8)
         await ctx.message.delete()
-        ctx.command.reset_cooldown(ctx) 
 
+@client.command()
+@commands.guild_only()
+@commands.has_any_role(717807997467885598)
+async def finalizar(ctx):
+    await ctx.message.delete()
+    if ctx.channel.name.startswith('sup-'):
+        msgbotmotivo = await ctx.send(f'Insira um motivo abaixo para finalizar este ticket!\n`Você tem 60 segundos para responder`')
+        try:
+            motivo = await client.wait_for('message', timeout=60, check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
+            await msgbotmotivo.delete()
+            await motivo.delete()
+        except asyncio.TimeoutError:
+            await ctx.send(f'**Você demorou muito para responder**', delete_after=4.0)
+            await msgbotmotivo.delete()
+            return
+        embed = discord.Embed(title="Ticket Finalizado!",description=f"**Ticket finalizado por: {ctx.author.mention}\n\nMotivo:\n```\n{motivo.content}\n```\nO ticket será deletado em 2 minutos automaticamente.**", color=0xff0000)
+        embed.set_footer(text="DreamCup League")
+        embed.timestamp = datetime.utcnow()
+        await ctx.send(embed=embed)
+        await asyncio.sleep(120)
+        await ctx.channel.delete()
+    else:
+        await ctx.send(f'{ctx.author.mention} Este comando só pode ser executado dentro de um ticket.', delete_after=8.0)        
+        
 @client.command()
 @commands.guild_only()
 async def infopause(ctx):
@@ -100,11 +156,68 @@ async def infocamp(ctx):
 
 @client.command()
 @commands.guild_only()
+@commands.has_any_role(717807997467885598)
+async def criarsala(ctx, time1: discord.Role, time2: discord.Role):
+    msginicialbot = await ctx.send(f'**Envie a data limite para a partida! {ctx.author.mention}**')
+    try:
+        datamsg = await client.wait_for('message', timeout=15, check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
+        await msginicialbot.delete()
+        await datamsg.delete()
+    except asyncio.TimeoutError:
+        await ctx.send(f'**Você demorou muito para responder** {ctx.author.mention}', delete_after=6.0)
+        await msginicialbot.delete()
+        return
+
+    try:
+        msglinkbot = await ctx.send(f'**Envie o link da partida {ctx.author.mention}**')
+        linkmsg = await client.wait_for('message', timeout=120, check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
+        await msglinkbot.delete()
+        await linkmsg.delete()
+    except asyncio.TimeoutError:
+        await ctx.send(f'**Você demorou muito para responder** {ctx.author.mention}', delete_after=6.0)
+        await msglinkbot.delete()
+        return
+
+    perms = {
+        ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        time1: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+        time2: discord.PermissionOverwrite(read_messages=True, send_messages=True)}
+    canaljogo = await ctx.guild.create_text_channel(f'jogo-{time1}-x-{time2}', overwrites=perms, category= client.get_channel(id=884208349200125992))
+    await canaljogo.send(f'**Bem vindo! {time1.mention} {time2.mention}**\n\nEste canal foi criado para vocês marcarem a data do jogo.\n\nConversem e arrumem o melhor horário para jogar, a data limite é: **{datamsg.content}**\n\nAo decidirem um horário, marquem um CEO para mudar o horário da partida no link.\n\n**Link da partida** (necessário os 2 times se inscreverem): {linkmsg.content}\nLembrem de se inscrever com antecedência, pois 5 minutos antes do horario marcado as inscrições fecham')
+    await ctx.send(f'Sala criada com sucesso. {canaljogo.mention}, com permissão para `{time1}` e `{time2}`.', delete_after=5.0)
+ 
+@criarsala.error
+async def criarsala_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f'{ctx.author.mention} ERRO! Uso correto: `!criarsala <time1> <time2>`', delete_after=10.0)
+        await ctx.message.delete()
+
+@client.command()
+@commands.guild_only()
 @commands.cooldown(1,120, commands.BucketType.user)
 async def help(ctx):
     embed = discord.Embed(title="Lista de Comandos", description="**!suporte**: Faz um ticket de suporte\n**!infocamp**: Mostra as informações do campeonato atual.\n**!infopause:** Mostra as informações sobre o sistema de pause.\n**!loja**: Vê os produtos disponíveis para comprar com pontos.\n**!pontos**: Mostra quantos pontos você tem.\n**!transferir**: Transfere pontos para uma pessoa.\n**!perfil**: Mostra o seu perfil com algumas informações.", color=0xff0000)
     embed.set_footer(text='Dreamcup League')
     await ctx.send(embed=embed)
+    
+# ERROS ERROS ERROS ERROS ERROS ERROS
+
+@client.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.NoPrivateMessage):
+        await ctx.send('Os comandos não podem ser executados no privado. <a:negado:883480639167426560>')
+    if isinstance(error, commands.CommandOnCooldown):
+        await ctx.send(f'{ctx.author.mention} Você executou este comando recentemente, aguarde {error.retry_after:.0f} segundos para executar novamente.', delete_after=6.0)
+        await ctx.message.delete()
+    if isinstance(error, commands.MissingAnyRole):
+        await ctx.send(f'{ctx.author.mention} Você não tem permissão para executar este comando. <a:negado:883480639167426560>', delete_after=5.0)
+        await ctx.message.delete()    
+        
+# SISTEMA DE PONTOS
+
+configbase = pyrecfg
+firebase = pyrebase.initialize_app(configbase)
+db = firebase.database()
 
 @client.command(aliases=['points', 'pontos'])
 @commands.guild_only()
@@ -117,5 +230,51 @@ async def dinheiro(ctx, pessoa: discord.Member=None):
         await open_account(pessoa)
         quantia = db.child(str(pessoa.id)).child("Pontos").get().val()
         await ctx.send(f'O {pessoa.mention} possui {quantia} pontos no momento!')
+        
+@client.command()
+@commands.guild_only()
+@commands.cooldown(1, 60, commands.BucketType.user)
+async def transferir(ctx, pessoa: discord.Member, quantia: int):
+    await open_account(ctx.author)
+    seumoney = db.child(str(ctx.author.id)).child("Pontos").get().val()
+    if seumoney < quantia:
+        await ctx.send(f'{ctx.author.mention} Você não tem pontos suficiente. Seus pontos: {seumoney}.')
+    elif quantia < 1:
+        await ctx.send(f'{ctx.author.mention} É necessário inserir uma quantia acima de 1.')
+    elif ctx.author == pessoa:
+        await ctx.send(f'{ctx.author.mention} Você não pode enviar pontos para você mesmo.')
+    else:
+        await open_account(pessoa)
+        moneypessoa = db.child(str(pessoa.id)).child("Pontos").get().val()
+        valorreceber = moneypessoa + quantia
+        valor = seumoney - quantia
+        db.child(str(ctx.author.id)).update({"Pontos": valor}) #quem enviou
+        db.child(str(pessoa.id)).update({"Pontos": valorreceber}) #quem recebeu
+        #logs + msgs
+        await ctx.send(f'<a:sucesso:883480591276851222> {ctx.author.mention} Você enviou {quantia} pontos para {pessoa.mention}!')
+        embed = discord.Embed(title='LOG - TRANSFERENCIA', description=f'Transferencia de pontos efetuada! <:alerta:806352926187978793>\n\nEnviador: {ctx.author.mention}\nRecebedor: {pessoa.mention}\nQuantia: {quantia}\n')
+        embed.set_footer(text='Logs Dreamcup')
+        embed.timestamp = datetime.utcnow()
+        log = client.get_channel(717811612311879732)
+        await log.send(embed=embed)
+        try:
+            await pessoa.send(f'**Você recebeu {quantia} pontos de {ctx.author.mention} na Dreamcup League**')
+        except:
+            pass
+
+@transferir.error
+async def transferir_error(ctx, error):
+    if isinstance(error, commands.BadArgument):
+        await ctx.send(f'{ctx.author.mention} ERRO! É necessário citar o membro, e inserir uma quantia. Exemplo: `!transferir @membro 10`', delete_after=8.0)
+        await ctx.message.delete()        
+        
+# criar conta no banco de dados
+async def open_account(user):
+    if str(user.id) in db.child().get().val():
+        return False
+    else:
+        db.child(str(user.id)).update({"Pontos": 0})
+        db.child(str(user.id)).update({"Wins": 0})
+    return True
 
 client.run(token)
