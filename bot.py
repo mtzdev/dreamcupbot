@@ -85,7 +85,7 @@ async def criartime(ctx, membro1: discord.Member, membro2: discord.Member, membr
         await player.add_roles(roleedicao)
         try: # try para evitar dm bloqueada e parada no codigo
             await player.send(f'**Você foi adicionado no time:** `{nometime}`!\n**Em breve será enviada as próximas instruções do campeonato.**\n**Caso você ache que isso seja um erro contate um staff.**')
-        except:
+        except discord.Forbidden:
             pass
     canaltime = await ctx.guild.create_text_channel(nometime, overwrites=perms, category= client.get_channel(id=888602889994502155))
     await canaltime.send(f'**Bem vindo a Dreamcup League!\n\nO time `{nometime}` foi registrado e já está participando do campeonato!\n\nCaso haja alguma dúvida, basta enviar neste canal que iremos te responder.**')
@@ -259,7 +259,7 @@ async def transferir(ctx, pessoa: discord.Member, quantia: int):
         await log.send(embed=embed)
         try:
             await pessoa.send(f'**Você recebeu {quantia} pontos de {ctx.author.mention} na Dreamcup League**')
-        except:
+        except discord.Forbidden:
             pass
 
 @transferir.error
@@ -272,9 +272,8 @@ async def transferir_error(ctx, error):
 async def open_account(user):
     if str(user.id) in db.child().get().val():
         return False
-    else:
-        db.child(str(user.id)).update({"Pontos": 0})
-        db.child(str(user.id)).update({"Wins": 0})
+    db.child(str(user.id)).update({"Pontos": 0})
+    db.child(str(user.id)).update({"Wins": 0})
     return True
 
 client.run(token)
