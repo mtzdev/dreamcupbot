@@ -1,3 +1,3 @@
 # DreamCup League BOT
-Sistema da parte basica do bot usado na Dreamcup League<br>
-Apenas alguns comandos/eventos
+Sistema completo do bot usado na Dreamcup League<br>
+Bot usado em 2020/2021 usando discord.py
